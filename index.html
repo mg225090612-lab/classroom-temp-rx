@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>교실 온도 처방전</title>
+<link rel="stylesheet" href="style.css">
+<script src="config.js"></script>
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <span class="rx">Rx</span>
+    <div><h1>교실 온도 처방전</h1><p class="en">Classroom Temperature Rx</p></div>
+  </div>
+  <div class="chips">
+    <span class="chip" id="chipSensor">센서 연결 안 됨</span>
+    <span class="chip" id="chipOutdoor">바깥 기온 불러오는 중</span>
+  </div>
+</header>
+
+<main class="grid">
+  <!-- F-03 처방 카드 -->
+  <section class="card rx-card" id="rxCard" data-mode="wait">
+    <div class="label">지금 처방 <span class="en">Prescription</span></div>
+    <div class="mode" id="rxMode">실내 온도를 기다리는 중</div>
+    <div class="set" id="rxSet">—</div>
+    <p class="reason" id="rxReason">micro:bit를 연결하거나 아래에 실내 온도를 직접 넣으세요.</p>
+    <p class="after" id="rxAfter" hidden></p>
+    <div class="basis" id="rxBasis" hidden></div>
+    <div class="row">
+      <button class="btn primary" id="btnDone" disabled>처방대로 맞췄어요</button>
+      <span class="small" id="doneCount">오늘 맞춤 0번</span>
+    </div>
+  </section>
+
+  <!-- F-04 [AI] 30분 뒤 예상 -->
+  <section class="card ai-card" id="aiCard">
+    <div class="label">AI · 30분 뒤 예상 <span class="en">Forecast</span></div>
+    <div class="ai-temp" id="aiTemp">—</div>
+    <p class="ai-sub" id="aiSub">기록이 30분 쌓이면 예측합니다.</p>
+    <p class="ai-note">예상값이라 보통 ±0.4°C 틀릴 수 있음 (HAIP 시험 오차 0.41°C)</p>
+    <p class="ai-log" id="aiLog"></p>
+  </section>
+
+  <!-- 창문 + 급하강 알림 -->
+  <section class="card win-card">
+    <div class="label">창문 <span class="en">Window</span></div>
+    <div class="seg" role="group" aria-label="창문 상태">
+      <button class="seg-btn on" id="winClosed">닫힘</button>
+      <button class="seg-btn" id="winOpen">열림</button>
+    </div>
+    <p class="alert" id="dropAlert" hidden></p>
+  </section>
+
+  <!-- F-05 체감 투표 -->
+  <section class="card vote-card">
+    <div class="label">지금 교실 어때요? <span class="en">How does it feel?</span></div>
+    <div class="votes">
+      <button class="vote cold" data-v="cold">춥다</button>
+      <button class="vote ok" data-v="ok">적당</button>
+      <button class="vote hot" data-v="hot">덥다</button>
+    </div>
+    <p class="small" id="voteSum">오늘 투표 0표</p>
+  </section>
+
+  <!-- F-06 오늘 온도 그래프 -->
+  <section class="card chart-card">
+    <div class="label">오늘 교실 온도 <span class="en">Today</span> <span class="legend"><i class="l-now"></i>실내 <i class="l-fc"></i>30분 뒤 예상 <i class="l-band"></i>끄는 구간 20~26°C</span></div>
+    <canvas id="chart" height="220"></canvas>
+  </section>
+
+  <!-- 입력 -->
+  <section class="card input-card">
+    <div class="label">실내 온도 받기 <span class="en">Input</span></div>
+    <div class="inputs">
+      <div class="in-group">
+        <button class="btn" id="btnSerial">micro:bit 연결</button>
+        <label>보정값 <input type="number" id="offset" step="0.5" value="0">°C</label>
+      </div>
+      <div class="in-group">
+        <label>직접 입력 <input type="number" id="manualTemp" step="0.1" placeholder="예: 18.5">°C</label>
+        <button class="btn" id="btnManual">적용</button>
+      </div>
+      <div class="in-group">
+        <button class="btn" id="btnDemo">기록 재생(데모)</button>
+        <span class="small" id="demoInfo"></span>
+      </div>
+    </div>
+  </section>
+</main>
+<div class="toast" id="toast" hidden></div>
+<footer class="foot">PPSD · 교실 온도 처방전 v1.0 · AI: HAIP temp_forecast_30min · 바깥 기온: 기상청 초단기실황</footer>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

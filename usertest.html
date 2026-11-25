@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>사용자 테스트 — 교실 온도 처방전</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", "Noto Sans CJK KR", sans-serif; background: #f4f5f2; color: #1b2228; }
+  .wrap { display: grid; grid-template-columns: 1fr 420px; height: 100vh; }
+  iframe { width: 100%; height: 100%; border: 0; border-right: 2px solid #1b2228; background: #fff; }
+  .panel { overflow: auto; padding: 16px 18px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .muted { color: #5f6b73; font-size: 14px; }
+  .box { background: #fff; border: 1px solid #dde1dc; border-radius: 12px; padding: 12px 14px; margin: 12px 0; }
+  .task.cur { border: 2px solid #5f3dc4; }
+  .task h2 { font-size: 16px; margin: 0 0 6px; }
+  .say { font-size: 17px; font-weight: 700; margin: 6px 0; }
+  .ans { font-size: 14px; color: #2b8a3e; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+  button { font: inherit; font-weight: 700; padding: 8px 12px; border-radius: 9px; border: 2px solid #1b2228; background: #fff; cursor: pointer; }
+  button.go { background: #1b2228; color: #fff; }
+  button.ok { border-color: #2b8a3e; color: #2b8a3e; } button.no { border-color: #c92a2a; color: #c92a2a; }
+  .res { font-weight: 700; }
+  select, textarea { font: inherit; width: 100%; padding: 7px; border: 1px solid #dde1dc; border-radius: 8px; }
+  .stars button { width: 44px; } .stars button.on { background: #5f3dc4; color: #fff; border-color: #5f3dc4; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; } th, td { border: 1px solid #dde1dc; padding: 4px 6px; text-align: left; }
+  .sum { font-size: 15px; line-height: 1.6; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <iframe id="app" title="교실 온도 처방전"></iframe>
+  <div class="panel">
+    <h1>사용자 테스트 · 관찰자용</h1>
+    <p class="muted">참가자는 왼쪽 화면만 봅니다. 관찰자는 과제를 읽어 주고, 답하는 순간 버튼을 누릅니다. 이름은 적지 않습니다(역할만).</p>
+
+    <div class="box">
+      <div class="row"><b id="pid">참가자 P1</b></div>
+      <label class="muted">역할</label>
+      <select id="role">
+        <option>냉난방기 담당 학생</option><option>같은 반 학생</option><option>다른 반 학생</option><option>교과 선생님</option><option>기타</option>
+      </select>
+    </div>
+
+    <div id="tasks"></div>
+
+    <div class="box">
+      <h2 style="font-size:16px;margin:0 0 6px">마지막 질문 (S3)</h2>
+      <div class="say">"이 화면의 처방대로 조작기를 맞추겠다" — 1~5점</div>
+      <div class="row stars" id="stars"></div>
+      <label class="muted">불편했던 점 · 바꾸면 좋을 점 (참가자 말 그대로)</label>
+      <textarea id="comment" rows="3"></textarea>
+      <div class="row"><button class="go" id="save">이 참가자 저장 → 다음 사람</button></div>
+    </div>
+
+    <div class="box">
+      <h2 style="font-size:16px;margin:0 0 6px">결과 (포스터 ⑥에 씀)</h2>
+      <div class="sum" id="sum">아직 없음</div>
+      <div class="row"><button id="csv">CSV 내려받기</button><button id="clear" class="no">모두 지우기</button></div>
+      <div style="overflow:auto;margin-top:8px"><table id="tbl"></table></div>
+    </div>
+  </div>
+</div>
+<script>
+// 과제 3개 — S1은 T1을 10초 안에 맞게 답한 비율
+const TASKS = [
+  { id: 'T1', url: 'index.html?demo=1&at=228&pause=1&outdoor=3', say: '벽 조작기를 지금 어떻게 맞추면 되나요? (모드와 온도)', ans: '정답: 난방 20°C' },
+  { id: 'T2', url: null, say: '창문을 열었다고 화면에 표시해 보세요. 이제 어떻게 하라고 하나요?', ans: '정답: 냉난방기 잠시 끄기 (창문 닫은 뒤 난방 20°C)' },
+  { id: 'T3', url: 'index.html?demo=1&at=243&pause=1&outdoor=3', say: '30분 뒤 교실은 몇 도로 예상되나요? 지금 난방을 켜야 하나요?', ans: '정답: 약 20.6°C, 켜지 않음(냉난방기 끄기)' },
+];
+const KEY = 'usertest_rows';
+const load = () => { try { return JSON.parse(localStorage.getItem(KEY) || '[]'); } catch { return []; } };
+const store = rows => { try { localStorage.setItem(KEY, JSON.stringify(rows)); } catch {} };
+let rows = load(), cur = {}, t0 = 0, rating = 0, step = 0;
+const $ = id => document.getElementById(id);
+
+function drawTasks() {
+  $('tasks').innerHTML = TASKS.map((t, i) => `
+    <div class="box task ${i === step ? 'cur' : ''}">
+      <h2>${t.id} ${i === 0 ? '(S1: 10초 안에 맞게)' : ''}</h2>
+      <div class="say">"${t.say}"</div>
+      <div class="ans">${t.ans}</div>
+      <div class="row">
+        <button class="go" onclick="startTask(${i})">${t.url ? '화면 준비 + ' : ''}시작</button>
+        <button class="ok" onclick="endTask(${i}, true)">맞게 답함</button>
+        <button class="no" onclick="endTask(${i}, false)">틀림·도움 필요</button>
+        <span class="res" id="r${i}">${cur[t.id] ? (cur[t.id].ok ? '✔ ' : '✘ ') + cur[t.id].sec + '초' : ''}</span>
+      </div>
+    </div>`).join('');
+}
+function startTask(i) {
+  step = i;
+  if (TASKS[i].url) $('app').src = TASKS[i].url + '&t=' + Date.now();
+  t0 = performance.now() + (TASKS[i].url ? 700 : 0);          // 화면이 뜨는 시간은 빼고 잼
+  drawTasks();
+}
+function endTask(i, ok) {
+  if (!t0) return;
+  cur[TASKS[i].id] = { ok, sec: Math.max(0, Math.round((performance.now() - t0) / 100) / 10) };
+  t0 = 0; step = Math.min(i + 1, TASKS.length - 1);
+  drawTasks();
+}
+$('stars').innerHTML = [1, 2, 3, 4, 5].map(n => `<button data-n="${n}">${n}</button>`).join('');
+$('stars').onclick = e => { const n = +e.target.dataset.n; if (!n) return; rating = n; [...$('stars').children].forEach(b => b.classList.toggle('on', +b.dataset.n === n)); };
+$('save').onclick = () => {
+  if (!rating) return alert('점수를 골라 주세요');
+  rows.push({ p: 'P' + (rows.length + 1), role: $('role').value, when: new Date().toLocaleString('ko-KR'),
+    T1ok: cur.T1?.ok ?? null, T1sec: cur.T1?.sec ?? null, T2ok: cur.T2?.ok ?? null, T2sec: cur.T2?.sec ?? null,
+    T3ok: cur.T3?.ok ?? null, T3sec: cur.T3?.sec ?? null, rating, comment: $('comment').value.trim() });
+  store(rows); cur = {}; rating = 0; step = 0; $('comment').value = '';
+  [...$('stars').children].forEach(b => b.classList.remove('on'));
+  startTask(0); draw();
+};
+function draw() {
+  $('pid').textContent = '참가자 P' + (rows.length + 1);
+  const n = rows.length;
+  if (!n) { $('sum').textContent = '아직 없음'; $('tbl').innerHTML = ''; return; }
+  const s1 = rows.filter(r => r.T1ok && r.T1sec <= 10).length;
+  const okRate = k => rows.filter(r => r[k]).length;
+  const mean = k => (rows.reduce((a, r) => a + (r[k] || 0), 0) / n).toFixed(1);
+  $('sum').innerHTML = `참가자 <b>${n}명</b><br>S1 T1을 10초 안에 맞게: <b>${s1}/${n} (${Math.round(s1 / n * 100)}%)</b> · 평균 ${mean('T1sec')}초<br>
+    T2 맞음 ${okRate('T2ok')}/${n} · T3 맞음 ${okRate('T3ok')}/${n}<br>S3 '처방대로 맞추겠다' 평균 <b>${mean('rating')}점</b>`;
+  const cols = ['p', 'role', 'T1ok', 'T1sec', 'T2ok', 'T3ok', 'rating', 'comment'];
+  $('tbl').innerHTML = '<tr>' + cols.map(c => `<th>${c}</th>`).join('') + '</tr>' +
+    rows.map(r => '<tr>' + cols.map(c => `<td>${r[c] === true ? '✔' : r[c] === false ? '✘' : (r[c] ?? '')}</td>`).join('') + '</tr>').join('');
+}
+$('csv').onclick = () => {
+  const cols = Object.keys(rows[0] || { p: '' });
+  const csv = '﻿' + [cols.join(',')].concat(rows.map(r => cols.map(c => `"${String(r[c] ?? '').replace(/"/g, '""')}"`).join(','))).join('\n');
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = 'usertest_results.csv'; a.click();
+};
+$('clear').onclick = () => { if (confirm('저장된 결과를 모두 지울까요?')) { rows = []; store(rows); draw(); } };
+startTask(0); draw();
+</script>
+</body>
+</html>
