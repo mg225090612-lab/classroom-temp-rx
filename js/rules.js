@@ -16,23 +16,23 @@ const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
 function decide(t, o, basis) {
   if (t < HEAT_SET) {                                   // 추움
-    if (o == null) return { mode: 'heat', set: HEAT_SET, reason: `${basis} ${t}°C → 난방 20°C (바깥 기온 없음)` };
-    if (o <= t) return { mode: 'heat', set: HEAT_SET, reason: `${basis} ${t}°C, 바깥 ${o}°C → 학교 기준 상한 20°C로 난방` };
-    return { mode: 'vent', set: null, reason: `${basis} ${t}°C인데 바깥(${o}°C)이 더 따뜻함 → 창문 열어 환기` };
+    if (o == null) return { mode: 'heat', set: HEAT_SET, reason: `${basis} ${t}°C · 20°C보다 낮아요 (바깥 기온 없음)` };
+    if (o <= t) return { mode: 'heat', set: HEAT_SET, reason: `${basis} ${t}°C · 20°C보다 낮고 바깥(${o}°C)이 더 추워요` };
+    return { mode: 'vent', set: null, reason: `${basis} ${t}°C인데 바깥(${o}°C)이 더 따뜻해요` };
   }
   if (t > COOL_MIN) {                                   // 더움
-    if (o == null) return { mode: 'cool', set: COOL_MIN, reason: `${basis} ${t}°C → 냉방 26°C (바깥 기온 없음)` };
+    if (o == null) return { mode: 'cool', set: COOL_MIN, reason: `${basis} ${t}°C · 26°C보다 높아요 (바깥 기온 없음)` };
     if (o >= t) {
       const set = clamp(Math.round(o - GAP), COOL_MIN, COOL_MAX);
       const caution = o - set > GAP_MAX;
       return {
         mode: 'cool', set, caution,
-        reason: `${basis} ${t}°C, 바깥 ${o}°C → 바깥보다 5°C 낮게(26~28°C 안)` + (caution ? ' · 온도차 8°C 넘음 주의' : ''),
+        reason: `${basis} ${t}°C · 바깥(${o}°C)보다 5°C 낮게` + (caution ? ' · 바깥과 8°C 넘게 차이 나니 주의' : ''),
       };
     }
-    return { mode: 'vent', set: null, reason: `${basis} ${t}°C인데 바깥(${o}°C)이 더 시원함 → 창문 열어 환기` };
+    return { mode: 'vent', set: null, reason: `${basis} ${t}°C인데 바깥(${o}°C)이 더 시원해요` };
   }
-  return { mode: 'off', set: null, reason: `${basis} ${t}°C → 20~26°C 사이라 냉난방기 끔` };
+  return { mode: 'off', set: null, reason: `${basis} ${t}°C · 20~26°C라 켜지 않아도 돼요` };
 }
 
 export function prescribe({ indoor, outdoor = null, forecast = null, windowOpen = false }) {
@@ -44,7 +44,7 @@ export function prescribe({ indoor, outdoor = null, forecast = null, windowOpen 
   if (windowOpen) {
     return {
       mode: 'pause', set: null, t, basis, after: base,
-      reason: '창문이 열려 있음 → 잠시 끄고, 창문을 닫은 뒤 아래 처방대로 다시 켜기',
+      reason: '창문이 열려 있어요 → 냉난방기를 잠시 끄고 창문을 닫으세요',
     };
   }
   return { ...base, t, basis };

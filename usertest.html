@@ -33,7 +33,7 @@
   <iframe id="app" title="교실 온도 처방전"></iframe>
   <div class="panel">
     <h1>사용자 테스트 · 관찰자용</h1>
-    <p class="muted">참가자는 왼쪽 화면만 봅니다. 관찰자는 과제를 읽어 주고, 답하는 순간 버튼을 누릅니다. 이름은 적지 않습니다(역할만).</p>
+    <p class="muted"><b>시작</b>을 눌러야 시간을 잽니다. 참가자는 왼쪽 화면만 봅니다. 관찰자는 과제를 읽어 주고, 답하는 순간 버튼을 누릅니다. 이름은 적지 않습니다(역할만).</p>
 
     <div class="box">
       <div class="row"><b id="pid">참가자 P1</b></div>
@@ -95,6 +95,11 @@ function startTask(i) {
   t0 = performance.now() + (TASKS[i].url ? 700 : 0);          // 화면이 뜨는 시간은 빼고 잼
   drawTasks();
 }
+function prepTask(i) {                                         // 화면만 준비, 시간은 아직 안 잼
+  step = i; t0 = 0;
+  if (TASKS[i].url) $('app').src = TASKS[i].url + '&t=' + Date.now();
+  drawTasks();
+}
 function endTask(i, ok) {
   if (!t0) return;
   cur[TASKS[i].id] = { ok, sec: Math.max(0, Math.round((performance.now() - t0) / 100) / 10) };
@@ -110,7 +115,7 @@ $('save').onclick = () => {
     T3ok: cur.T3?.ok ?? null, T3sec: cur.T3?.sec ?? null, rating, comment: $('comment').value.trim() });
   store(rows); cur = {}; rating = 0; step = 0; $('comment').value = '';
   [...$('stars').children].forEach(b => b.classList.remove('on'));
-  startTask(0); draw();
+  prepTask(0); draw();
 };
 function draw() {
   $('pid').textContent = '참가자 P' + (rows.length + 1);
@@ -131,7 +136,7 @@ $('csv').onclick = () => {
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = 'usertest_results.csv'; a.click();
 };
 $('clear').onclick = () => { if (confirm('저장된 결과를 모두 지울까요?')) { rows = []; store(rows); draw(); } };
-startTask(0); draw();
+prepTask(0); draw();
 </script>
 </body>
 </html>

@@ -113,7 +113,10 @@ function playDemo() {
 }
 function stopDemo(keep = false) {
   if (S.demo && S.demo.timer) { clearInterval(S.demo.timer); S.demo.timer = null; }
-  if (!keep && S.source === 'demo') S.demo = null;
+  if (!keep && S.source === 'demo') {               // 재생 기록이 실제 처방에 섞이지 않게 비움
+    S.demo = null; sampler.reset(); S.aiLog = [];
+    S.fc = { ok: false, why: '기록이 30분 쌓이면 예측합니다' };
+  }
 }
 $('btnDemo').onclick = () => {
   if (S.demo && S.demo.timer) { stopDemo(true); render(); }
@@ -129,6 +132,7 @@ async function loadWeather() {
     const j = await r.json();
     if (j.error) throw new Error(j.error);
     S.outdoor = j.temp; S.outdoorBase = j.base; S.outdoorErr = null;
+    if (S.outdoorShownMs == null) S.outdoorShownMs = Math.round(performance.now());   // 화면을 열고 바깥 기온이 뜰 때까지(T3)
     S.outdoorMs = Math.round(performance.now() - t0);
   } catch (e) { S.outdoorErr = e.message && !/JSON/.test(e.message) ? e.message : '바깥 기온을 불러오지 못함'; }
   render();
@@ -201,51 +205,47 @@ function timeLabel(ts, sample) {
   const d = new Date(ts); return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+const BIG = { heat: s => `난방 ${s}°C`, cool: s => `냉방 ${s}°C`, off: () => '끄기', vent: () => '창문 열고 환기', pause: () => '잠시 끄기' };
+
 function render() {
-  // 상태 칩
+  // 상태 칩: 숫자 없이 지금 어디서 값을 받는지만
+  const d = S.demo;
   const chipS = $('chipSensor');
-  const srcText = { microbit: S.serial === 'disconnected' ? 'micro:bit 연결 끊김' : 'micro:bit 연결됨', manual: '직접 입력', demo: '기록 재생(데모)', history: '저장된 기록' }[S.source] || '센서 연결 안 됨';
-  chipS.textContent = srcText + (S.indoor != null ? ` · 실내 ${f1(S.indoor)}°C` : '');
+  chipS.textContent = { microbit: S.serial === 'disconnected' ? 'micro:bit 연결 끊김' : 'micro:bit 연결됨', manual: '직접 입력',
+    demo: d && d.label ? `기록 재생 · ${d.label}` : '기록 재생', history: '저장된 기록' }[S.source] || '센서 연결 안 됨';
   chipS.className = 'chip' + (S.source ? ' ok' : '');
   const o = outdoorNow();
-  const chipO = $('chipOutdoor');
-  if (o.v != null) {
-    chipO.textContent = `바깥 ${f1(o.v)}°C` + (o.demo ? ' (데모 값)' : S.outdoorBase ? ` · 기상청 ${S.outdoorBase.slice(-4, -2)}:00` : '');
-    chipO.className = 'chip ok';
-  } else { chipO.textContent = S.outdoorErr ? `바깥 기온 없음 — ${S.outdoorErr}` : '바깥 기온 불러오는 중'; chipO.className = 'chip warn'; }
+  $('chipOutdoor').textContent = o.v != null
+    ? `바깥 ${f1(o.v)}°C` + (o.demo ? ' (재생용 데모 값)' : S.outdoorBase ? ` · 기상청 ${S.outdoorBase.slice(-4, -2)}:00 기준` : '')
+    : (S.outdoorErr ? `바깥 기온 없음 — ${S.outdoorErr}` : '바깥 기온 불러오는 중');
 
-  // 처방 카드
+  // 처방 한 줄 (가장 큼)
   const rx = currentRx();
+  const fc = freshForecast();
   const card = $('rxCard');
   if (!rx) {
-    card.dataset.mode = 'wait';
-    $('rxMode').textContent = '실내 온도를 기다리는 중'; $('rxSet').textContent = '—';
-    $('rxReason').textContent = 'micro:bit를 연결하거나 아래에 실내 온도를 직접 넣으세요.';
-    $('rxAfter').hidden = true; $('btnDone').disabled = true; $('rxBasis').hidden = true;
+    card.dataset.mode = 'wait'; $('rxSet').textContent = '—';
+    $('rxReason').textContent = "micro:bit를 연결하거나 '자세히 · 설정'에서 실내 온도를 넣으세요.";
+    $('rxAfter').hidden = true; $('btnDone').disabled = true;
   } else {
     card.dataset.mode = rx.mode;
-    $('rxMode').textContent = MODE_LABEL[rx.mode] + (rx.caution ? ' · 주의' : '');
-    $('rxSet').textContent = rx.set != null ? `${rx.set}°C` : { off: '끄기', vent: '환기', pause: '잠시 끄기' }[rx.mode];
+    $('rxSet').textContent = BIG[rx.mode](rx.set);
     $('rxReason').textContent = rx.reason;
-    if (rx.after) {
-      $('rxAfter').hidden = false;
-      $('rxAfter').textContent = `창문을 닫은 뒤 → ${MODE_LABEL[rx.after.mode]}${rx.after.set != null ? ' ' + rx.after.set + '°C' : ''}`;
-    } else $('rxAfter').hidden = true;
+    if (rx.after) { $('rxAfter').hidden = false; $('rxAfter').textContent = `창문을 닫은 뒤 → ${BIG[rx.after.mode](rx.after.set)}`; }
+    else $('rxAfter').hidden = true;
     $('btnDone').disabled = false;
-    const fcB = freshForecast(), oB = outdoorNow();
-    $('rxBasis').hidden = false;
-    $('rxBasis').innerHTML = [
-      ['지금 실내', `${f1(S.indoor)}°C`, ''],
-      ['바깥', oB.v != null ? `${f1(oB.v)}°C` : '없음', ''],
-      ['30분 뒤 예상(AI)', fcB ? `${f1(fcB.temp)}°C` : '—', 'ai'],
-      ['창문', S.windowOpen ? '열림' : '닫힘', ''],
-    ].map(([k, v, cls]) => `<div class="${cls}"><span>${k}</span><b>${v}</b></div>`).join('');
   }
   const c = S.counts[dayKey()] || {};
   $('doneCount').textContent = `오늘 맞춤 ${c.done || 0}번`;
 
-  // AI
-  const fc = freshForecast();
+  // 판단 근거: 숫자 세 개
+  $('tNow').textContent = S.indoor != null ? `${f1(S.indoor)}°C` : '—';
+  $('tFc').textContent = fc ? `${f1(fc.temp)}°C` : '—';
+  $('tFcNote').textContent = fc ? '±0.4°C 틀릴 수 있음' : (S.fc.ok ? '센서 기록이 끊겨 쉬는 중' : S.fc.why);
+  $('tOut').textContent = o.v != null ? `${f1(o.v)}°C` : '—';
+  $('tOutLabel').textContent = o.demo ? '바깥 · 데모 값' : '바깥';
+
+  // 자세히: AI 기록
   const last = sampler.samples[sampler.samples.length - 1];
   if (fc) {
     $('aiTemp').textContent = `${f1(fc.temp)}°C`;
@@ -259,7 +259,7 @@ function render() {
     $('aiLog').textContent = `지난 예측 ${S.aiLog.length}개 채점 · AI 오차 ${m('ai').toFixed(2)}°C · 그대로 두기 ${m('base').toFixed(2)}°C`;
   } else $('aiLog').textContent = '';
 
-  // 창문 · 알림
+  // 창문 · 급하강 알림
   $('winClosed').classList.toggle('on', !S.windowOpen);
   $('winOpen').classList.toggle('on', S.windowOpen);
   const drop = dropNow();
@@ -270,14 +270,13 @@ function render() {
     $('btnMarkOpen').onclick = () => setWindow(true);
   } else al.hidden = true;
 
-  // 투표
+  // 투표 · 데모
   const n = (c.cold || 0) + (c.ok || 0) + (c.hot || 0);
-  $('voteSum').textContent = n ? `오늘 춥다 ${c.cold || 0} · 적당 ${c.ok || 0} · 덥다 ${c.hot || 0} (적당 ${Math.round((c.ok || 0) / n * 100)}%)` : '오늘 투표 0표';
-
-  // 데모 정보
-  const d = S.demo;
+  $('voteSum').textContent = n ? `오늘 투표: 춥다 ${c.cold || 0} · 적당 ${c.ok || 0} · 덥다 ${c.hot || 0} (적당 ${Math.round((c.ok || 0) / n * 100)}%)` : '오늘 투표 0표';
   $('btnDemo').textContent = d && d.timer ? '재생 멈춤' : d && d.i < d.rows.length ? '재생 계속' : '기록 재생(데모)';
   $('demoInfo').textContent = d ? `${d.label} · 1칸 = 5분 · HAIP 시험일 기록` : '';
+  $('perf').textContent = [S.loadMs != null ? `화면 열림 ${(S.loadMs / 1000).toFixed(1)}초` : '',
+    S.outdoorShownMs != null ? `바깥 기온 표시 ${(S.outdoorShownMs / 1000).toFixed(1)}초` : ''].filter(Boolean).join(' · ');
 
   drawChart(fc);
 }
@@ -320,6 +319,11 @@ function toast(msg) {
   clearTimeout(toastTimer); toastTimer = setTimeout(() => (t.hidden = true), 2600);
 }
 window.addEventListener('resize', () => render());
+window.addEventListener('load', () => setTimeout(() => {                   // 화면 열림 시간(T4)
+  const nav = performance.getEntriesByType('navigation')[0];
+  S.loadMs = Math.round(nav && nav.loadEventEnd ? nav.loadEventEnd : performance.now()); render();
+}, 0));
+$('more').addEventListener('toggle', () => render());     // 펼칠 때 그래프 다시 그림
 
 // ── 시작 ─────────────────────────────────────────────────────────────────
 (async function start() {
